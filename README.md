@@ -8,7 +8,7 @@ Official Sub-Store frontend and backend routes on one Cloudflare Workers domain.
 - Preview subscriptions and collections; use built-in node actions such as regex rename/filter and node sorting.
 - Export JSON, Clash/Mihomo, Loon, Surge and Shadowrocket output through official converters.
 - Manage collections, files, settings, artifacts, archives and share tokens through official routes.
-- Download backups and restore official-format data. Original D1 subscriptions are imported once and the D1 database is retained.
+- Download backups and restore official-format data. Data starts in a fresh SQLite store; no previous D1 data is imported.
 - Concurrent writes are serialized for this personal installation and changes are committed atomically before success is returned.
 
 The generated backend is pinned to official Sub-Store **2.42.3** (`a3e61061e50b40e5c5938969aab915d05d8d7069`). The frontend is pinned to `4bd7b0acbe65466b933ccea14fc61dbebe036ead`. Updating either requires reviewing the adapter and passing the integration tests; deploys do not silently pull a new backend.
@@ -21,9 +21,9 @@ Client proxy/policy routing, SOCKS/HTTP proxy dispatch, local files/MMDB, Node n
 
 ## Deploy
 
-See [DEPLOY.md](DEPLOY.md). Pushes to `main` build the pinned official frontend, check the Worker, run integration tests, apply the retained D1 migrations, and deploy the Worker and static assets together.
+See [DEPLOY.md](DEPLOY.md). Pushes to `main` build the pinned official frontend, check the Worker, run integration tests, and deploy the Worker and static assets together.
 
-The current configuration binds the Kearney account's existing KV/D1 resources. For another account, replace their resource identifiers. SQLite Durable Objects are provisioned through Wrangler migrations.
+There are no account-specific database or KV IDs in the configuration. SQLite Durable Objects are provisioned through Wrangler migrations. The `official-v3` object is a new installation and keeps its data across subsequent deployments.
 
 ## Source and licensing
 

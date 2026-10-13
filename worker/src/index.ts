@@ -49,16 +49,6 @@ export class SubscriptionStore extends DurableObject<Cloudflare.Env> {
       const rows = this.ctx.storage.sql.exec<{ key: string; value: string }>('SELECT key, value FROM preferences').toArray();
       const values = new Map(rows.map(row => [row.key, row.value]));
       const original = new Map(values);
-      if (!values.has('sub-store')) {
-        // Import the previous compatibility layer once; retain the original D1 database.
-        const old = await this.env.DB.prepare('SELECT * FROM subscriptions ORDER BY id').all<{
-          name: string; url: string | null; content: string | null; user_agent: string | null; config_json: string;
-        }>();
-        values.set('sub-store', JSON.stringify({ subs: old.results.map(row => ({
-          ...JSON.parse(row.config_json), name: row.name, url: row.url || '', content: row.content || '',
-          source: row.url ? 'remote' : 'local', ua: row.user_agent || '', process: [],
-        })), settings: {}, collections: [], files: [], artifacts: [], tokens: [] }));
-      }
       const changed = new Set<string>();
       const response = await new Promise<Response>((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error('Sub-Store request exceeded 25 seconds')), 25000);
@@ -132,7 +122,7 @@ export default {
     if (!/^\/(api|download|share)(\/|$)/.test(url.pathname)) return env.ASSETS.fetch(request);
     if (request.method === 'OPTIONS') return new Response(null, { status: 204 });
     if (env.ADMIN_TOKEN && !url.pathname.startsWith('/share/') && request.headers.get('authorization') !== `Bearer ${env.ADMIN_TOKEN}`) return failure('UNAUTHORIZED', 'Admin token required', 401);
-    const response = await env.SUBSTORE.getByName('default').handle(request);
+    const response = await env.SUBSTORE.getByName('official-v3').handle(request);
     if (url.pathname === '/api/utils/env' && response.ok) {
       const data = await response.json() as { data: { feature: Record<string, unknown>; meta: Record<string, unknown> } };
       data.data.feature = { ...data.data.feature, workers: true, scripts: false, proxyPolicy: false };

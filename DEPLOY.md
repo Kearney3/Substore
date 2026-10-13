@@ -4,13 +4,11 @@
 
 Configure GitHub Actions secrets:
 
-- `CLOUDFLARE_API_TOKEN`: Workers Scripts Edit, D1 Edit and Workers KV Storage Edit for the target account. The token must allow deploying SQLite-backed Durable Objects with the Worker.
-- `CLOUDFLARE_ACCOUNT_ID`: the same account that owns the configured KV and D1 resources.
+- `CLOUDFLARE_API_TOKEN`: Workers Scripts Edit for the target account. The token must allow deploying SQLite-backed Durable Objects with the Worker.
+- `CLOUDFLARE_ACCOUNT_ID`: the account to deploy to.
 - Optional `SUB_STORE_ADMIN_TOKEN`: written to the Worker as `ADMIN_TOKEN`. When enabled, API and download clients must send `Authorization: Bearer <token>`; share routes use official share tokens instead. The stock frontend does not add this header automatically, so use a client that supplies it before enabling this option.
 
-The current Worker configuration reuses `sub-store-cloudflare-cache` and `sub-store-cloudflare-db` in the Kearney account. For another account, create its resources once and replace `id`, `database_name` and `database_id` in `worker/wrangler.toml`.
-
-No R2 or Containers service is used. A SQLite Durable Object named `SubscriptionStore` is created through the `substore-sqlite-v1` Wrangler migration. Do not remove/rename this migration or class after deployment: it owns the persistent official Sub-Store data.
+No D1, KV, R2 or Containers service is used. A SQLite Durable Object named `SubscriptionStore` is created through the `substore-sqlite-v1` Wrangler migration. Do not remove/rename this migration or class after deployment: it owns the persistent official Sub-Store data.
 
 ## Deploy through Actions
 
@@ -18,11 +16,10 @@ Push `main` or dispatch `Deploy Sub-Store to Cloudflare`.
 
 1. Build the pinned official frontend with `VITE_API_URL=/` and the Workers capability/source patches.
 2. Install locked Worker dependencies, generate runtime types and typecheck.
-3. Apply local D1 migrations and run official API integration tests, including CRUD, preview, six exporters, collections, files, backups, concurrent writes and remote HTTP.
-4. Check the retained remote D1 binding and apply D1 migrations before deployment.
-5. Deploy the Worker, SQLite Durable Object class and frontend assets together.
+3. Run official API integration tests, including CRUD, preview, six exporters, collections, files, backups, concurrent writes and remote HTTP.
+4. Deploy the Worker, SQLite Durable Object class and frontend assets together.
 
-The first official API request imports any previous compatibility-layer subscriptions from D1 into the Durable Object. The original D1 tables remain available for rollback/reference. Subsequent official data lives in Durable Object SQLite; use the frontend backup export before major changes.
+The `official-v3` Durable Object starts with empty official Sub-Store data. No previous D1 data is imported. Its SQLite data persists across deploys, restarts and eviction; use the frontend backup export before major changes. Existing old Cloudflare resources are not used by this implementation.
 
 ## Local verification
 

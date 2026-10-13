@@ -1,0 +1,2 @@
+# Bundled upstream grammar examples include intentional whitespace inside strings.
+worker/src/official/runtime.js linguist-generated=true whitespace=-blank-at-eol,-space-before-tab

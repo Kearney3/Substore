@@ -1,4 +1,4 @@
-import { spawn, execFileSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
@@ -15,8 +15,6 @@ if (!existsSync(assetsDir)) {
 if (!existsSync(resolve(assetsDir, 'index.html'))) {
   throw new Error(`Frontend index.html is missing: ${resolve(assetsDir, 'index.html')}.`);
 }
-
-execFileSync('npx', ['wrangler', 'd1', 'migrations', 'apply', 'DB', '--local'], { cwd: workerDir, stdio: 'inherit' });
 
 const worker = spawn(
   'npx',
