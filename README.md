@@ -12,8 +12,8 @@ V2.0.1 hotfix: migrated Worker TypeScript definitions to `wrangler types` and fi
 - 定时检查官方 `Sub-Store` 后端与前端的上游 HEAD。
 - 上游前端变化：自动构建、测试并部署。
 - 上游后端变化：自动做兼容性扫描与 Worker 合约测试；如果发现 Node 专属运行时变化，自动停止生产部署并创建/更新 GitHub Issue；不会把官方 Node.js backend 直接塞进 Workers。
-- Cloudflare Workers 自动供应 D1/KV/R2 绑定；GitHub Actions 不需要先执行 `wrangler d1 create` / `kv namespace create` / `r2 bucket create`。
-- D1 migrations 使用 binding `DB`，首次部署在资源供应后执行 migration。
+- 部署配置显式复用已创建的 D1/KV 资源，重跑不会重复创建同名资源；当前 Worker 不使用 R2。
+- D1 migrations 使用 binding `DB`，在部署前执行 migration。
 - Worker 同时提供静态前端和 API，默认单域名部署。
 
 ## 重要事实
@@ -27,7 +27,7 @@ V2.0.1 hotfix: migrated Worker TypeScript definitions to `wrangler types` and fi
 - `CLOUDFLARE_API_TOKEN`
 - `CLOUDFLARE_ACCOUNT_ID`
 
-API Token 至少需要允许当前账户部署 Workers，并管理 D1/KV/R2（用于 Wrangler 自动供应资源）。
+API Token 至少需要当前账户的 Workers Scripts Edit、D1 Edit 和 Workers KV Storage Edit 权限。`whoami` 成功不能证明 D1 权限可用。
 
 可选：
 
@@ -38,11 +38,11 @@ API Token 至少需要允许当前账户部署 Workers，并管理 D1/KV/R2（�
 1. 上传整个仓库到 GitHub。
 2. 设置上述 Cloudflare Secrets。
 3. 推送到 `main`，或在 Actions 手动运行 `Deploy`。
-4. Wrangler 根据 `worker/wrangler.toml` 自动供应绑定资源。
+4. Wrangler 根据 `worker/wrangler.toml` 验证已有 D1 绑定。
 5. GitHub Actions 执行 D1 migrations。
 6. Worker 上线并同时托管 `frontend-dist/`。
 
-自动资源供应目前由 Wrangler 支持 D1、KV、R2；该功能仍属于 beta，因此建议生产账户保留 Cloudflare dashboard 作为资源核查入口。
+当前配置绑定 Kearney 账户已有资源；其他账户部署前需替换 D1/KV 的资源标识，详见 `DEPLOY.md`。
 
 ## 自动同步节奏
 

@@ -15,18 +15,16 @@ CACHE_TTL_SECONDS = "900"
 UPSTREAM_REPO = "https://github.com/sub-store-org/Sub-Store"
 UPSTREAM_FRONTEND_REPO = "https://github.com/sub-store-org/Sub-Store-Front-End"
 
-# Automatic provisioning:
-# Do not specify account-specific resource IDs here.
-# For R2, also omit bucket_name so Wrangler can create the bucket.
+# Reuse the provisioned resources on every deployment, including retries.
 [[d1_databases]]
 binding = "DB"
+database_name = "sub-store-cloudflare-db"
+database_id = "106fd24e-762c-471a-9531-c76411e2f891"
 migrations_dir = "migrations"
 
 [[kv_namespaces]]
 binding = "CACHE"
-
-[[r2_buckets]]
-binding = "R2"
+id = "40355827169c4416976a96db2c00fd46"
 
 [triggers]
 crons = ["*/5 * * * *"]

@@ -12,7 +12,7 @@ Settings → Secrets and variables → Actions → New repository secret:
 
 `CLOUDFLARE_ACCOUNT_ID`
 
-Recommended token scope: Workers Scripts edit, D1 edit, KV edit and R2 edit for the target account. Use the narrowest account-scoped permissions that work for your deployment model.
+Required token scope: Workers Scripts edit, D1 edit and Workers KV Storage edit for the target account. The D1 permission is required for database checks and migrations; a successful `wrangler whoami` does not prove D1 access. R2 is not used by the current Worker and is not required.
 
 Optional application secret:
 
@@ -30,15 +30,12 @@ git push origin main
 
 GitHub Actions will:
 
-1. Download the official Sub-Store Front-End.
-2. Build it using pnpm 11.0.9.
-3. Install and typecheck the Worker.
-4. Run Worker contract tests locally.
-5. Run D1 migrations using the `DB` binding.
-6. Let Wrangler automatically provision missing D1/KV/R2 resources.
-7. Deploy Worker and frontend assets.
+1. Download and build the official Sub-Store Front-End using pnpm 11.0.9.
+2. Install and typecheck the Worker, then run local contract tests.
+3. Verify the existing `DB` binding and apply remote D1 migrations.
+4. Configure the optional admin token and deploy Worker and frontend assets.
 
-Cloudflare documents automatic provisioning for D1/KV/R2 and notes that GitHub-based deployments can create resources without committing account-specific IDs back to the repository.
+Migrations run before deployment so a new Worker never serves requests against an uninitialized database.
 
 ## 4. Automatic upstream tracking
 
@@ -53,18 +50,13 @@ The design intentionally does not copy the official Node.js backend into Workers
 
 After the first successful deployment, bind a custom domain in Cloudflare. The Worker can serve both the official frontend and API from the same host.
 
-## 6. Resource provisioning
+## 6. Resource bindings and retries
 
-Do not run these commands manually for this repository:
+`worker/wrangler.toml` explicitly binds the existing `sub-store-cloudflare-cache` KV namespace and `sub-store-cloudflare-db` D1 database in the Kearney account. Re-running Actions reuses these resources rather than creating duplicate names after a partial failure.
 
-```bash
-wrangler d1 create ...
-wrangler kv namespace create ...
-wrangler r2 bucket create ...
-```
+When deploying this fork to another account, create its KV namespace and D1 database once and replace `id`, `database_name` and `database_id` in the configuration. Use the same account in `CLOUDFLARE_ACCOUNT_ID`. Resource IDs are identifiers, not API tokens.
 
-The Wrangler configuration intentionally omits account-specific D1/KV IDs and relies on automatic provisioning.
-
+R2 is omitted because the current Worker does not use it. Add an R2 binding only when a feature requires it and R2 is enabled for the account.
 
 ## TypeScript runtime types
 
