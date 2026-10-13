@@ -20,4 +20,12 @@ patch('src/views/settings/AboutUs.vue', [
   ['</template>', '<p style="text-align:center"><a href="https://github.com/Kearney3/Substore" target="_blank" rel="noopener noreferrer">Cloudflare 部署版源码 · AGPL-3.0</a></p>\n</template>'],
 ]);
 patch('src/types/store/globalStore.d.ts', [["| 'Node';", "| 'Node' | 'CloudflareWorkers';"]]);
+// The native backend-path dialog must also appear on direct management-page visits.
+const appPath = resolve(root, 'src/App.vue');
+const appSource = readFileSync(appPath, 'utf8');
+if (!appSource.includes("route.path === '/subs'")) throw new Error('Review official access dialog changes');
+writeFileSync(appPath, appSource.replaceAll("route.path === '/subs'", "route.path !== '/404'"));
+for (const path of ['src/views/share/ShareEditorPage.vue', 'src/components/ShareListItem.vue']) {
+  patch(path, [['env.value?.meta?.node?.env?.SUB_STORE_FRONTEND_BACKEND_PATH || ""', 'env.value?.meta?.workers?.secretPath || env.value?.meta?.node?.env?.SUB_STORE_FRONTEND_BACKEND_PATH || ""']]);
+}
 console.log('Applied Workers capability and source notices to the official frontend.');

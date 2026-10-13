@@ -1,6 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
 import { runOfficial } from './official/runtime.js';
-declare global { namespace Cloudflare { interface Env { ADMIN_TOKEN?: string; } } }
+declare global { namespace Cloudflare { interface Env { ADMIN_TOKEN?: string; SUB_STORE_FRONTEND_BACKEND_PATH?: string; } } }
 
 const MAX_BYTES = 1024 * 1024;
 const failure = (code: string, message: string, status = 500) => Response.json({
@@ -118,8 +118,23 @@ interface OfficialResponse { status?: number | string; body?: string; headers?: 
 export default {
   async fetch(request: Request, env: Cloudflare.Env): Promise<Response> {
     const url = new URL(request.url);
-    if (url.pathname === '/health' || url.pathname === '/api/health') return Response.json({ ok: true, service: 'sub-store-cloudflare', backend: 'Sub-Store', version: '2.42.3' });
-    if (!/^\/(api|download|share)(\/|$)/.test(url.pathname)) return env.ASSETS.fetch(request);
+    if (url.pathname === '/health') return Response.json({ ok: true, service: 'sub-store-cloudflare' });
+    const prefix = env.SUB_STORE_FRONTEND_BACKEND_PATH;
+    const hasPrefix = prefix && /^\/[A-Za-z0-9_-]{20,}$/.test(prefix) && url.pathname.startsWith(`${prefix}/`);
+    if (hasPrefix) {
+      url.pathname = url.pathname.slice(prefix.length);
+      request = new Request(url, request);
+    }
+    if (!/^\/(api|download|share)(\/|$)/.test(url.pathname)) {
+      const asset = await env.ASSETS.fetch(request);
+      const response = new Response(asset.body, asset);
+      response.headers.set('Referrer-Policy', 'no-referrer');
+      return response;
+    }
+    // Match official merged deployment: secret backend path, public token-scoped shares.
+    if (!prefix || !/^\/[A-Za-z0-9_-]{20,}$/.test(prefix)) return failure('ACCESS_NOT_CONFIGURED', 'Configure a strong Sub-Store backend path', 503);
+    if (!hasPrefix && !url.pathname.startsWith('/share/')) return failure('NOT_FOUND', 'Not found', 404);
+    if (url.pathname === '/api/health') return Response.json({ ok: true });
     if (request.method === 'OPTIONS') return new Response(null, { status: 204 });
     if (env.ADMIN_TOKEN && !url.pathname.startsWith('/share/') && request.headers.get('authorization') !== `Bearer ${env.ADMIN_TOKEN}`) return failure('UNAUTHORIZED', 'Admin token required', 401);
     // The official mobile runtime allows its own frontend origins. Our frontend is served on this origin.
@@ -131,10 +146,12 @@ export default {
     const response = await env.SUBSTORE.getByName('official-v3').handle(request);
     if (url.pathname === '/api/utils/env' && response.ok) {
       const data = await response.json() as { data: { feature: Record<string, unknown>; meta: Record<string, unknown> } };
-      data.data.feature = { ...data.data.feature, workers: true, scripts: false, proxyPolicy: false };
-      data.data.meta = { ...data.data.meta, runtime: 'cloudflare-workers', source: 'https://github.com/sub-store-org/Sub-Store', sourceRef: 'a3e61061e50b40e5c5938969aab915d05d8d7069' };
+      data.data.feature = { ...data.data.feature, workers: true, shares: true, scripts: false, proxyPolicy: false };
+      data.data.meta = { ...data.data.meta, workers: { secretPath: prefix }, runtime: 'cloudflare-workers', source: 'https://github.com/sub-store-org/Sub-Store', sourceRef: 'a3e61061e50b40e5c5938969aab915d05d8d7069' };
       return Response.json(data);
     }
+    response.headers.set('Cache-Control', 'no-store');
+    response.headers.set('Referrer-Policy', 'no-referrer');
     return response;
   },
 } satisfies ExportedHandler<Cloudflare.Env>;

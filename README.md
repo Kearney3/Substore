@@ -8,6 +8,7 @@ Official Sub-Store frontend and backend routes on one Cloudflare Workers domain.
 - Preview subscriptions and collections; use built-in node actions such as regex rename/filter and node sorting.
 - Export JSON, Clash/Mihomo, Loon, Surge and Shadowrocket output through official converters.
 - Manage collections, files, settings, artifacts, archives and share tokens through official routes.
+- Native secret backend path protects management; resource-scoped share links work without login and support expiration, revocation and usage limits.
 - Download backups and restore official-format data. Data starts in a fresh SQLite store; no previous D1 data is imported.
 - Concurrent writes are serialized for this personal installation and changes are committed atomically before success is returned.
 
@@ -18,6 +19,8 @@ The generated backend is pinned to official Sub-Store **2.42.3** (`a3e61061e50b4
 Custom JavaScript processors and response scripts cannot run in ordinary Workers. Script execution returns a clear error, and the frontend hides script action buttons for this backend. Use built-in actions instead.
 
 Client proxy/policy routing, SOCKS/HTTP proxy dispatch, local files/MMDB, Node notifications, and Node cron schedulers are not available. Remote HTTP(S) subscriptions and DNS-over-HTTPS use Workers fetch. Request and downloaded subscription bodies are limited to 1 MiB; each persisted preference value is limited to 1.9 MB. Cloudflare's normal free-plan limits still apply. This is a personal installation, with one serialized state store for subscriptions and their related collections.
+
+Set the required `SUB_STORE_FRONTEND_BACKEND_PATH` Worker secret before using management APIs. The official frontend's backend-path dialog grants access to its holder; the public UI shell cannot read management data. Share recipients receive independent token-authenticated `/share/...` links and do not need this secret or a Cloudflare login. See [DEPLOY.md](DEPLOY.md#native-access-control-and-public-shares).
 
 ## Deploy
 

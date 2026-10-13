@@ -25,7 +25,8 @@ const worker = spawn(
     '--port',
     '8787',
     '--show-interactive-dev-session',
-    'false'
+    'false',
+    '--var', 'SUB_STORE_FRONTEND_BACKEND_PATH:/local-test-backend-path-123456'
   ],
   {
     cwd: workerDir,
@@ -64,7 +65,7 @@ async function waitForReady(timeoutSeconds = 60) {
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 1000));
 
     try {
-      const response = await fetch(`${base}/api/health`);
+      const response = await fetch(`${base}/health`);
       if (response.ok) return true;
     } catch {
       // Wrangler is still starting.
@@ -84,7 +85,7 @@ if (!ready) {
 console.log('Worker is ready; executing contract tests.');
 
 try {
-  process.env.WORKER_TEST_URL = base;
+  process.env.WORKER_TEST_URL = `${base}/local-test-backend-path-123456`;
   await import('../tests/contract.mjs');
   console.log('Worker contract tests passed.');
   stop(0);

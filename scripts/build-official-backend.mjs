@@ -27,7 +27,26 @@ const result = await build({
   plugins: [{ name: 'workers-runtime', setup(build) {
     build.onLoad({ filter: /vendor\/express\.js$/ }, ({ path }) => {
       const source = readFileSync(path, 'utf8');
-      return { contents: source.replace("if (/json/i.test(headers['content-type']))", "if (body && /json/i.test(headers['content-type']))"), loader: 'js' };
+      // The mobile router lacks the Node frontend's share authentication middleware.
+      const guarded = source.replace('import { ENV }', "import { consumeShareToken } from '@/restful/token';\nimport { ENV }")
+        .replace('// pattern match', `let shareToken;
+        if (path.startsWith('/share/')) {
+            const parts = path.split('/');
+            shareToken = method === 'GET' && query.token && consumeShareToken({ token: query.token, type: decodeURIComponent(parts[2]), name: decodeURIComponent(parts[3]), pathname: decodeURIComponent(path) });
+            if (!shareToken) { Response(cors.headers).status(404).end(); return; }
+        }
+        // pattern match`)
+        .replace('const req = {', 'const req = { subStoreShareToken: shareToken,');
+      if (guarded === source || !guarded.includes('subStoreShareToken: shareToken')) throw new Error('Review official share router changes');
+      return { contents: guarded.replace("if (/json/i.test(headers['content-type']))", "if (body && /json/i.test(headers['content-type']))").replace('status: isQX ? STATUS_CODE_MAP[statusCode] : statusCode,', 'status: statusCode,'), loader: 'js' };
+    });
+    build.onLoad({ filter: /restful\/token\.js$/ }, ({ path }) => {
+      const source = readFileSync(path, 'utf8');
+      const start = source.indexOf('    if (!ENV().isNode) {', source.indexOf('async function signToken'));
+      const end = source.indexOf('    try {', start);
+      if (start < 0 || end < 0 || !source.includes('const nanoid = eval(`require("nanoid")`);')) throw new Error('Review official token creation changes');
+      // Reuse official validation, expiration and count rules with Web Crypto token generation.
+      return { contents: "import { customAlphabet, urlAlphabet } from 'nanoid';\n" + (source.slice(0, start) + source.slice(end)).replace('const nanoid = eval(`require("nanoid")`);', 'const nanoid = { customAlphabet, urlAlphabet };'), loader: 'js' };
     });
     build.onLoad({ filter: /runtime\/(fs|path|net|tls|dgram|worker-threads|stream-promises|child-process)\.js$/ }, () => ({
       contents: 'export default function unavailableNodeBuiltin() { return undefined; }', loader: 'js',
