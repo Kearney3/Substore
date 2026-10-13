@@ -146,7 +146,7 @@ export default {
     const response = await env.SUBSTORE.getByName('official-v3').handle(request);
     if (url.pathname === '/api/utils/env' && response.ok) {
       const data = await response.json() as { data: { feature: Record<string, unknown>; meta: Record<string, unknown> } };
-      data.data.feature = { ...data.data.feature, workers: true, shares: true, scripts: false, proxyPolicy: false };
+      data.data.feature = { ...data.data.feature, workers: true, share: true, scripts: false, proxyPolicy: false };
       data.data.meta = { ...data.data.meta, workers: { secretPath: prefix }, runtime: 'cloudflare-workers', source: 'https://github.com/sub-store-org/Sub-Store', sourceRef: 'a3e61061e50b40e5c5938969aab915d05d8d7069' };
       return Response.json(data);
     }

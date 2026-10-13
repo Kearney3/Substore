@@ -38,6 +38,7 @@ try {
   const env = await api('/api/utils/env');
   assert.equal(env.backend, 'CloudflareWorkers');
   assert.equal(env.feature.scripts, false);
+  assert.equal(env.feature.share, true, 'Official frontend must enable its Share UI');
   const crossOrigin = await fetch(`${base}/api/utils/env`, { headers: { Origin: 'https://unrelated.example' } });
   assert.equal(crossOrigin.status, 403, 'Only the integrated frontend origin bypasses the mobile runtime CORS allowlist');
   const preview = await api('/api/preview/sub', 'POST', sub);
