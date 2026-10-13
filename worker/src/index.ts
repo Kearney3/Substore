@@ -122,6 +122,12 @@ export default {
     if (!/^\/(api|download|share)(\/|$)/.test(url.pathname)) return env.ASSETS.fetch(request);
     if (request.method === 'OPTIONS') return new Response(null, { status: 204 });
     if (env.ADMIN_TOKEN && !url.pathname.startsWith('/share/') && request.headers.get('authorization') !== `Bearer ${env.ADMIN_TOKEN}`) return failure('UNAUTHORIZED', 'Admin token required', 401);
+    // The official mobile runtime allows its own frontend origins. Our frontend is served on this origin.
+    if (request.headers.get('origin') === url.origin) {
+      const headers = new Headers(request.headers);
+      headers.delete('origin');
+      request = new Request(request, { headers });
+    }
     const response = await env.SUBSTORE.getByName('official-v3').handle(request);
     if (url.pathname === '/api/utils/env' && response.ok) {
       const data = await response.json() as { data: { feature: Record<string, unknown>; meta: Record<string, unknown> } };

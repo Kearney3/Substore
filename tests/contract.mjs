@@ -11,7 +11,7 @@ const content = 'ss://YWVzLTEyOC1nY206cGFzcw==@example.com:443#Original\n' +
   'trojan://test-password@example.org:443?sni=example.org#Trojan';
 const sub = { name, source: 'local', content, process: [] };
 async function raw(path, method = 'GET', body) {
-  return fetch(`${base}${path}`, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
+  return fetch(`${base}${path}`, { method, headers: { 'Content-Type': 'application/json', Origin: new URL(base).origin }, body: body === undefined ? undefined : JSON.stringify(body) });
 }
 async function api(path, method = 'GET', body, expected = 200) {
   const response = await raw(path, method, body);
@@ -28,6 +28,8 @@ try {
   const env = await api('/api/utils/env');
   assert.equal(env.backend, 'CloudflareWorkers');
   assert.equal(env.feature.scripts, false);
+  const crossOrigin = await fetch(`${base}/api/utils/env`, { headers: { Origin: 'https://unrelated.example' } });
+  assert.equal(crossOrigin.status, 403, 'Only the integrated frontend origin bypasses the mobile runtime CORS allowlist');
   const preview = await api('/api/preview/sub', 'POST', sub);
   assert.equal(preview.original.length, 2);
   assert.equal(preview.processed[0].type, 'ss');
