@@ -8,3 +8,4 @@ worker/.wrangler/
 .dev.vars
 *.log
 coverage/
+.upstream-backend/

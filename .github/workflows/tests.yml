@@ -47,7 +47,7 @@ jobs:
 
       - name: Install Worker dependencies
         working-directory: worker
-        run: npm install
+        run: npm ci
 
       - name: Generate Worker runtime types
         working-directory: worker

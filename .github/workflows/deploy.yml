@@ -19,7 +19,7 @@ env:
 
 jobs:
   deploy:
-    name: Build, Test, Provision, Migrate and Deploy
+    name: Build, Test, Migrate and Deploy
     runs-on: ubuntu-latest
     timeout-minutes: 40
 
@@ -59,7 +59,7 @@ jobs:
 
       - name: Install Worker dependencies
         working-directory: worker
-        run: npm install
+        run: npm ci
 
       - name: Generate Worker runtime types
         working-directory: worker

@@ -8,8 +8,9 @@ const checkout = resolve(root, 'frontend');
 const output = resolve(root, 'frontend-dist');
 // 默认使用官方仓库，可通过环境变量 FRONTEND_REPO 覆盖
 const repo = process.env.FRONTEND_REPO || 'https://github.com/sub-store-org/Sub-Store-Front-End.git';
-const ref = process.env.FRONTEND_REF || '';
+const ref = process.env.FRONTEND_REF || '4bd7b0acbe65466b933ccea14fc61dbebe036ead';
 const pnpmVersion = process.env.PNPM_VERSION || '11.0.9';
+const pnpmArgs = ['--yes', `pnpm@${pnpmVersion}`];
 
 function run(command, args, cwd = root) {
   execFileSync(command, args, { cwd, stdio: 'inherit', env: { ...process.env } });
@@ -21,21 +22,24 @@ rmSync(output, { recursive: true, force: true });
 
 console.log(`📥 Cloning frontend repository: ${repo} ${ref ? `(branch: ${ref})` : ''}`);
 const cloneArgs = ['clone', '--depth', '1'];
-if (ref) cloneArgs.push('--branch', ref);
+if (ref && !/^[a-f0-9]{40}$/.test(ref)) cloneArgs.push('--branch', ref);
 cloneArgs.push(repo, checkout);
 run('git', cloneArgs);
+if (/^[a-f0-9]{40}$/.test(ref)) {
+  run('git', ['fetch', '--depth', '1', 'origin', ref], checkout);
+  run('git', ['checkout', '--detach', 'FETCH_HEAD'], checkout);
+}
+run('node', [resolve(root, 'scripts/patch-workers-frontend.mjs'), checkout]);
 
 console.log('📦 Installing dependencies...');
-run('corepack', ['enable']);
-run('corepack', ['prepare', `pnpm@${pnpmVersion}`, '--activate']);
-run('pnpm', ['install', '--frozen-lockfile'], checkout);
+run('npx', [...pnpmArgs, 'install', '--frozen-lockfile'], checkout);
 
 console.log('🏗️ Building frontend with VITE_API_URL=/ ...');
 // 【关键修复】在构建时注入环境变量 VITE_API_URL=/
 // 这样前端会使用 window.location.origin 作为后端地址，适配 Cloudflare Workers 部署
 execFileSync(
-  'pnpm',
-  ['build'],
+  'npx',
+  [...pnpmArgs, 'build'],
   {
     cwd: checkout,
     stdio: 'inherit',

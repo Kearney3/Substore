@@ -1,63 +1,54 @@
 # Deployment
 
-## 1. Create GitHub repository
+## Account configuration
 
-Upload the entire repository, including `.github/`, `worker/`, `scripts/`, `tests/` and `.upstream/`.
+Configure GitHub Actions secrets:
 
-## 2. Configure GitHub secrets
+- `CLOUDFLARE_API_TOKEN`: Workers Scripts Edit, D1 Edit and Workers KV Storage Edit for the target account. The token must allow deploying SQLite-backed Durable Objects with the Worker.
+- `CLOUDFLARE_ACCOUNT_ID`: the same account that owns the configured KV and D1 resources.
+- Optional `SUB_STORE_ADMIN_TOKEN`: written to the Worker as `ADMIN_TOKEN`. When enabled, API and download clients must send `Authorization: Bearer <token>`; share routes use official share tokens instead. The stock frontend does not add this header automatically, so use a client that supplies it before enabling this option.
 
-Settings → Secrets and variables → Actions → New repository secret:
+The current Worker configuration reuses `sub-store-cloudflare-cache` and `sub-store-cloudflare-db` in the Kearney account. For another account, create its resources once and replace `id`, `database_name` and `database_id` in `worker/wrangler.toml`.
 
-`CLOUDFLARE_API_TOKEN`
+No R2 or Containers service is used. A SQLite Durable Object named `SubscriptionStore` is created through the `substore-sqlite-v1` Wrangler migration. Do not remove/rename this migration or class after deployment: it owns the persistent official Sub-Store data.
 
-`CLOUDFLARE_ACCOUNT_ID`
+## Deploy through Actions
 
-Required token scope: Workers Scripts edit, D1 edit and Workers KV Storage edit for the target account. The D1 permission is required for database checks and migrations; a successful `wrangler whoami` does not prove D1 access. R2 is not used by the current Worker and is not required.
+Push `main` or dispatch `Deploy Sub-Store to Cloudflare`.
 
-Optional application secret:
+1. Build the pinned official frontend with `VITE_API_URL=/` and the Workers capability/source patches.
+2. Install locked Worker dependencies, generate runtime types and typecheck.
+3. Apply local D1 migrations and run official API integration tests, including CRUD, preview, six exporters, collections, files, backups, concurrent writes and remote HTTP.
+4. Check the retained remote D1 binding and apply D1 migrations before deployment.
+5. Deploy the Worker, SQLite Durable Object class and frontend assets together.
 
-`SUB_STORE_ADMIN_TOKEN`
+The first official API request imports any previous compatibility-layer subscriptions from D1 into the Durable Object. The original D1 tables remain available for rollback/reference. Subsequent official data lives in Durable Object SQLite; use the frontend backup export before major changes.
 
-If configured, the GitHub Actions deployment automatically writes it to the Worker as the `ADMIN_TOKEN` secret.
+## Local verification
 
-## 3. Push main
-
-```bash
-git add .
-git commit -m "feat: initial deployment"
-git push origin main
+```sh
+cd worker
+npm ci
+npm run typecheck
+cd ..
+node scripts/sync-official-frontend.mjs
+node scripts/test-worker.mjs
 ```
 
-GitHub Actions will:
+The contract test creates uniquely named sample subscriptions, collections and files, then removes only its own fixtures. To test an already-running local Worker or deployed service:
 
-1. Download and build the official Sub-Store Front-End using pnpm 11.0.9.
-2. Install and typecheck the Worker, then run local contract tests.
-3. Verify the existing `DB` binding and apply remote D1 migrations.
-4. Configure the optional admin token and deploy Worker and frontend assets.
+```sh
+WORKER_TEST_URL=http://127.0.0.1:8787 node tests/contract.mjs
+```
 
-Migrations run before deployment so a new Worker never serves requests against an uninitialized database.
+## Upstream updates
 
-## 4. Automatic upstream tracking
+Backend and frontend revisions are pinned to prevent accidental API/runtime drift. Update the pins deliberately, regenerate the backend with `node scripts/build-official-backend.mjs`, review the generated changes, and rerun integration and browser acceptance. The backend build uses `scripts/official-backend-lock.json` to fix upstream dependency versions.
 
-`upstream-sync.yml` runs every 30 minutes and can also be started manually.
+There is currently no automatic upstream-sync workflow in this repository. A new upstream version does not change the running service until reviewed and deployed.
 
-- Frontend update: automatically rebuild and deploy.
-- Backend update: fetch the new upstream package metadata and changed-file list; run a compatibility gate; safe changes continue to deploy the current Worker compatibility layer; unsafe Node-specific changes stop production deployment and open/update an issue.
+## Domain and limitations
 
-The design intentionally does not copy the official Node.js backend into Workers.
+`workers.dev` serves both the frontend and API; a custom domain may be bound to the same Worker. API/download/share paths are explicitly routed to the Worker before SPA fallback.
 
-## 5. Custom domain
-
-After the first successful deployment, bind a custom domain in Cloudflare. The Worker can serve both the official frontend and API from the same host.
-
-## 6. Resource bindings and retries
-
-`worker/wrangler.toml` explicitly binds the existing `sub-store-cloudflare-cache` KV namespace and `sub-store-cloudflare-db` D1 database in the Kearney account. Re-running Actions reuses these resources rather than creating duplicate names after a partial failure.
-
-When deploying this fork to another account, create its KV namespace and D1 database once and replace `id`, `database_name` and `database_id` in the configuration. Use the same account in `CLOUDFLARE_ACCOUNT_ID`. Resource IDs are identifiers, not API tokens.
-
-R2 is omitted because the current Worker does not use it. Add an R2 binding only when a feature requires it and R2 is enabled for the account.
-
-## TypeScript runtime types
-
-The Worker now follows Cloudflare's recommended `wrangler types` flow. Do not add `@cloudflare/workers-types` back to `worker/package.json`; `npm run typecheck` generates `worker/worker-configuration.d.ts` from `wrangler.toml` before running `tsc`.
+User JavaScript, client proxy/policy routing, Node-only local files/MMDB and Node cron/notification features are unavailable in this pure Workers deployment. The official conversion and built-in processing logic is retained. See README for size limits and tested functionality.

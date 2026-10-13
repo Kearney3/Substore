@@ -8,6 +8,7 @@ workers_dev = true
 directory = "../frontend-dist"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
+run_worker_first = ["/api/*", "/download/*", "/share/*", "/health"]
 
 [vars]
 SUB_STORE_CORS_ALLOWED_ORIGINS = "*"
@@ -27,7 +28,15 @@ binding = "CACHE"
 id = "40355827169c4416976a96db2c00fd46"
 
 [triggers]
-crons = ["*/5 * * * *"]
+crons = []
+
+[[durable_objects.bindings]]
+name = "SUBSTORE"
+class_name = "SubscriptionStore"
+
+[[migrations]]
+tag = "substore-sqlite-v1"
+new_sqlite_classes = ["SubscriptionStore"]
 
 [observability]
 enabled = true
