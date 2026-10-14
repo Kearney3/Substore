@@ -119,8 +119,9 @@ export default {
   async fetch(request: Request, env: Cloudflare.Env): Promise<Response> {
     const url = new URL(request.url);
     if (url.pathname === '/health') return Response.json({ ok: true, service: 'sub-store-cloudflare' });
-    const prefix = env.SUB_STORE_FRONTEND_BACKEND_PATH;
-    const hasPrefix = prefix && /^\/[A-Za-z0-9_-]{20,}$/.test(prefix) && url.pathname.startsWith(`${prefix}/`);
+    const configuredPath = env.SUB_STORE_FRONTEND_BACKEND_PATH;
+    const prefix = configuredPath && /^\/?[A-Za-z0-9_-]+$/.test(configuredPath) ? `/${configuredPath.replace(/^\//, '')}` : undefined;
+    const hasPrefix = prefix && url.pathname.startsWith(`${prefix}/`);
     if (hasPrefix) {
       url.pathname = url.pathname.slice(prefix.length);
       request = new Request(url, request);
@@ -132,7 +133,7 @@ export default {
       return response;
     }
     // Match official merged deployment: secret backend path, public token-scoped shares.
-    if (!prefix || !/^\/[A-Za-z0-9_-]{20,}$/.test(prefix)) return failure('ACCESS_NOT_CONFIGURED', 'Configure a strong Sub-Store backend path', 503);
+    if (!prefix) return failure('ACCESS_NOT_CONFIGURED', 'Configure a non-empty Sub-Store backend path', 503);
     if (!hasPrefix && !url.pathname.startsWith('/share/')) return failure('NOT_FOUND', 'Not found', 404);
     if (url.pathname === '/api/health') return Response.json({ ok: true });
     if (request.method === 'OPTIONS') return new Response(null, { status: 204 });

@@ -7,6 +7,8 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const workerDir = resolve(root, 'worker');
 const assetsDir = resolve(root, 'frontend-dist');
 const base = 'http://127.0.0.1:8787';
+const backendPath = process.env.WORKER_TEST_BACKEND_PATH || 'sub';
+const backendPrefix = `/${backendPath.replace(/^\//, '')}`;
 
 if (!existsSync(assetsDir)) {
   throw new Error(`Frontend assets are missing: ${assetsDir}. Run scripts/sync-official-frontend.mjs first.`);
@@ -26,7 +28,7 @@ const worker = spawn(
     '8787',
     '--show-interactive-dev-session',
     'false',
-    '--var', 'SUB_STORE_FRONTEND_BACKEND_PATH:/local-test-backend-path-123456'
+    '--var', `SUB_STORE_FRONTEND_BACKEND_PATH:${backendPath}`
   ],
   {
     cwd: workerDir,
@@ -85,7 +87,7 @@ if (!ready) {
 console.log('Worker is ready; executing contract tests.');
 
 try {
-  process.env.WORKER_TEST_URL = `${base}/local-test-backend-path-123456`;
+  process.env.WORKER_TEST_URL = `${base}${backendPrefix}`;
   await import('../tests/contract.mjs');
   console.log('Worker contract tests passed.');
   stop(0);

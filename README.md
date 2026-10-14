@@ -22,6 +22,8 @@ Client proxy/policy routing, SOCKS/HTTP proxy dispatch, local files/MMDB, Node n
 
 Set the required `SUB_STORE_FRONTEND_BACKEND_PATH` Worker secret before using management APIs. The official frontend's backend-path dialog grants access to its holder; the public UI shell cannot read management data. Share recipients receive independent token-authenticated `/share/...` links and do not need this secret or a Cloudflare login. See [DEPLOY.md](DEPLOY.md#native-access-control-and-public-shares).
 
+Configure this value as a GitHub Actions repository secret. Both `sub` and `/sub` are accepted and normalize to `/sub`; there is no minimum length. The value must be non-empty and use letters, digits, `_` or `-`, with an optional leading slash. After changing it, run the deploy workflow and update the browser's backend path.
+
 ## Deploy
 
 See [DEPLOY.md](DEPLOY.md). Pushes to `main` build the pinned official frontend, check the Worker, run integration tests, and deploy the Worker and static assets together.

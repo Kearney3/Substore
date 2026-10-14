@@ -6,7 +6,7 @@ Configure GitHub Actions secrets:
 
 - `CLOUDFLARE_API_TOKEN`: Workers Scripts Edit for the target account. The token must allow deploying SQLite-backed Durable Objects with the Worker.
 - `CLOUDFLARE_ACCOUNT_ID`: the account to deploy to.
-- Required repository Actions secret `SUB_STORE_FRONTEND_BACKEND_PATH`: a random secret path consisting of `/` followed by at least 20 letters, digits, `_` or `-`. Configure it under GitHub **Settings → Secrets and variables → Actions → Repository secrets**. The deploy workflow validates it before building and writes it to the Worker through `wrangler secret put` immediately before deployment. Missing/invalid values stop deployment. Never put its value in Wrangler config, frontend assets or this repository.
+- Required repository Actions secret `SUB_STORE_FRONTEND_BACKEND_PATH`: a non-empty path name using letters, digits, `_` or `-`. There is no minimum length, and the leading `/` is optional: `sub` and `/sub` both use `/sub` as the management prefix. Configure it under GitHub **Settings → Secrets and variables → Actions → Repository secrets**. The deploy workflow validates it before building and writes it to the Worker through `wrangler secret put` immediately before deployment. Empty values, `/` alone and names containing other characters stop deployment. Never put its value in Wrangler config, frontend assets or this repository.
 - Optional `SUB_STORE_ADMIN_TOKEN`: an additional bearer check for management APIs/downloads. The stock frontend does not add this header automatically; normally leave this unset and use the native secret backend path.
 
 No D1, KV, R2 or Containers service is used. A SQLite Durable Object named `SubscriptionStore` is created through the `substore-sqlite-v1` Wrangler migration. Do not remove/rename this migration or class after deployment: it owns the persistent official Sub-Store data.
@@ -16,6 +16,8 @@ No D1, KV, R2 or Containers service is used. A SQLite Durable Object named `Subs
 This adapter implements the official merged deployment's access model: management APIs and direct downloads are reachable only under `SUB_STORE_FRONTEND_BACKEND_PATH`, while `/share/sub`, `/share/col` and `/share/file` require their own official resource-scoped tokens. Share links need no account login or management secret. Do not protect the entire Worker with Cloudflare Access, as it would block subscription clients.
 
 Open the frontend and enter the secret backend path in its native configuration dialog, or initialize the owner browser with `/?magicpath=<secret-path-without-leading-slash>`. The browser saves its backend configuration. Anyone holding this path can manage the installation, so treat it as an owner credential; share only the generated `/share/...?...token=...` links. The public frontend shell contains no management secret and cannot read data without it.
+
+For example, setting the Actions secret to either `sub` or `/sub` gives the backend URL `https://<worker-host>/sub`. Enter `/sub` in the frontend's backend configuration dialog, or open `https://<worker-host>/?magicpath=sub`. Management requests use `/sub/api/...`; public share links still use `/share/...` without this prefix.
 
 Create and revoke shares using the official Share UI. Tokens use Web Crypto through the pinned upstream Nano ID dependency. The official token validation, expiration, resource scope and use-count rules are retained. Share creation and consumption are serialized with the installation's SQLite state. Invalid, revoked, expired and exhausted tokens return 404. The adapter does not enable the optional invalid-share fake-node fallback.
 
@@ -48,7 +50,7 @@ node scripts/test-worker.mjs
 The contract test creates uniquely named sample subscriptions, collections and files, then removes only its own fixtures. To test an already-running local Worker or deployed service:
 
 ```sh
-WORKER_TEST_URL=http://127.0.0.1:8787/local-test-backend-path-123456 node tests/contract.mjs
+WORKER_TEST_URL=http://127.0.0.1:8787/sub node tests/contract.mjs
 ```
 
 ## Upstream updates
