@@ -11,14 +11,19 @@ Official Sub-Store frontend and backend routes on one Cloudflare Workers domain.
 - Native secret backend path protects management; resource-scoped share links work without login and support expiration, revocation and usage limits.
 - Download backups and restore official-format data. Data starts in a fresh SQLite store; no previous D1 data is imported.
 - Concurrent writes are serialized for this personal installation and changes are committed atomically before success is returned.
+- Script Operator, Script Filter, shortcut scripts, response transformers, file scripts and mihomo config overrides (YAML patch or JavaScript `main(config)`) use an isolated QuickJS/WASM runtime, including promises, restricted HTTP, lodash, YAML, Base64 and a small Buffer API.
+- Per-artifact cron schedules use persistent Durable Object Alarms, with finite retries and task status in the Sync page. Schedules default to UTC and must be at least five minutes apart.
+- Optional HTTPS notifications are delivered by Alarm with finite retries. Native backend logs are redacted and limited to 500 entries when enabled.
 
 The generated backend is pinned to official Sub-Store **2.42.3** (`a3e61061e50b40e5c5938969aab915d05d8d7069`). The frontend is pinned to `4bd7b0acbe65466b933ccea14fc61dbebe036ead`. Updating either requires reviewing the adapter and passing the integration tests; deploys do not silently pull a new backend.
 
 ## Workers limits
 
-Custom JavaScript processors and response scripts cannot run in ordinary Workers. Script execution returns a clear error, and the frontend hides script action buttons for this backend. Use built-in actions instead.
+Custom JavaScript runs inside a bundled WASM interpreter; the main Worker still rejects Node-only dynamic operations. Scripts are limited to 256 KiB, 16 MiB interpreter memory, three seconds including async waits, and an instruction-interrupt budget. Each call receives a fresh context. `require`, native modules, host callbacks and a complete Node Buffer API are unavailable. Script exceptions and resource limits fail explicitly rather than silently falling back to a no-op.
 
-Client proxy/policy routing, SOCKS/HTTP proxy dispatch, local files/MMDB, Node notifications, and Node cron schedulers are not available. Remote HTTP(S) subscriptions and DNS-over-HTTPS use Workers fetch. Request and downloaded subscription bodies are limited to 1 MiB; each persisted preference value is limited to 1.9 MB. Cloudflare's normal free-plan limits still apply. This is a personal installation, with one serialized state store for subscriptions and their related collections.
+Client proxy/policy routing, SOCKS/HTTP proxy dispatch, arbitrary local files/MMDB and Node schedulers are unavailable. HTTP(S) subscriptions and DNS-over-HTTPS use Workers fetch, limited to 1 MiB per downloaded body, 40 calls per request and four concurrent fetches. Management bodies allow 4 MiB, backups 8 MiB, and each persisted preference 4 MiB. Large preferences are stored in atomic Unicode-safe chunks. Cloudflare's normal account-wide free-plan limits still apply. This is a personal installation, with one serialized state store for subscriptions and their related collections; slow requests can still hold that queue.
+
+Implementation and verification boundaries: [docs/free-plan-implementation.md](docs/free-plan-implementation.md). Remaining gaps versus official Sub-Store: [docs/restoration-roadmap.md](docs/restoration-roadmap.md). Local and mocked integration checks do not prove production quotas, live GitHub delivery or actual proxy-client imports.
 
 Set the required `SUB_STORE_FRONTEND_BACKEND_PATH` Worker secret before using management APIs. The official frontend's backend-path dialog grants access to its holder; the public UI shell cannot read management data. Share recipients receive independent token-authenticated `/share/...` links and do not need this secret or a Cloudflare login. See [DEPLOY.md](DEPLOY.md#native-access-control-and-public-shares).
 

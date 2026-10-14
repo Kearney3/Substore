@@ -9,7 +9,14 @@ Configure GitHub Actions secrets:
 - Required repository Actions secret `SUB_STORE_FRONTEND_BACKEND_PATH`: a non-empty path name using letters, digits, `_` or `-`. There is no minimum length, and the leading `/` is optional: `sub` and `/sub` both use `/sub` as the management prefix. Configure it under GitHub **Settings → Secrets and variables → Actions → Repository secrets**. The deploy workflow validates it before building and writes it to the Worker through `wrangler secret put` immediately before deployment. Empty values, `/` alone and names containing other characters stop deployment. Never put its value in Wrangler config, frontend assets or this repository.
 - Optional `SUB_STORE_ADMIN_TOKEN`: an additional bearer check for management APIs/downloads. The stock frontend does not add this header automatically; normally leave this unset and use the native secret backend path.
 
-No D1, KV, R2 or Containers service is used. A SQLite Durable Object named `SubscriptionStore` is created through the `substore-sqlite-v1` Wrangler migration. Do not remove/rename this migration or class after deployment: it owns the persistent official Sub-Store data.
+No D1, KV, R2, Dynamic Workers or Containers service is used. A SQLite Durable Object named `SubscriptionStore` is created through the `substore-sqlite-v1` Wrangler migration. Do not remove/rename this migration or class after deployment: it owns the persistent official Sub-Store data.
+
+Optional Worker configuration:
+
+- `SUB_STORE_CRON_TIMEZONE`: IANA timezone, default `UTC`. For Ulaanbaatar use `Asia/Ulaanbaatar`. Changing it recalculates existing schedules. No permanent Node cron process or Wrangler cron trigger is required.
+- `SUB_STORE_PUSH_SERVICE`: Worker secret containing an HTTPS URL template with `[推送标题]` / `[推送内容]`, or an HTTPS webhook receiving JSON `{title, content}` via POST. Shoutrrr schemes are not supported. Notifications are disabled when unset; delivery is attempted at most three times. The deployment workflow does not overwrite these optional values.
+
+The Sync page exposes task state. At most 50 artifacts may have active schedules, each at least five minutes apart; times are best effort and Alarm is at least once. A crash after an external upload/notification but before recording success can repeat delivery. Network calls are bounded and notifications have a pending backlog limit of 20.
 
 ## Native access control and public shares
 
@@ -45,6 +52,8 @@ npm run typecheck
 cd ..
 node scripts/sync-official-frontend.mjs
 node scripts/test-worker.mjs
+cd worker
+npm run test:background
 ```
 
 The contract test creates uniquely named sample subscriptions, collections and files, then removes only its own fixtures. To test an already-running local Worker or deployed service:
@@ -63,4 +72,10 @@ There is currently no automatic upstream-sync workflow in this repository. A new
 
 `workers.dev` serves both the frontend and API; a custom domain may be bound to the same Worker. API/download/share paths are explicitly routed to the Worker before SPA fallback.
 
-User JavaScript, client proxy/policy routing, Node-only local files/MMDB and Node cron/notification features are unavailable in this pure Workers deployment. The official conversion and built-in processing logic is retained. See README for size limits and tested functionality.
+User JavaScript is interpreted with QuickJS/WASM. Node-only modules, local files/MMDB, client proxy/policy routing and complete Node cron/notification implementations remain unavailable. See README for supported bridges, size limits and tested functionality.
+
+## Data compatibility and rollback
+
+Export an official backup before deploying this storage change. Existing single-value preferences remain readable, and new chunk tables are created in the same `official-v3` object. No data is moved to a new installation.
+
+Once a preference exceeds 1.9 MB, an older adapter cannot read its chunks. Its legacy row contains an invalid-JSON compatibility marker so it fails instead of interpreting the installation as empty. Roll back only to an adapter that supports this chunk layout, or restore a verified backup using a compatible adapter. Do not claim a plain old-code rollback is sufficient. Test backup restoration in an isolated installation before a production rollback.

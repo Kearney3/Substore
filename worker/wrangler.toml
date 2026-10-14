@@ -6,6 +6,11 @@ workers_dev = true
 # Historical versions predate native authentication; do not expose their preview URLs.
 preview_urls = false
 
+[[rules]]
+type = "CompiledWasm"
+globs = ["**/*.wasm"]
+fallthrough = false
+
 [assets]
 directory = "../frontend-dist"
 binding = "ASSETS"

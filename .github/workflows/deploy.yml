@@ -72,6 +72,11 @@ jobs:
         working-directory: worker
         run: npm ci
 
+      - name: Reproduce pinned official backend
+        run: |
+          node scripts/build-official-backend.mjs
+          git diff --exit-code -- worker/src/official/runtime.js worker/src/official/lodash.txt
+
       - name: Generate Worker runtime types
         working-directory: worker
         run: npx wrangler types
@@ -81,7 +86,13 @@ jobs:
         run: npm run typecheck
 
       - name: Run local Worker contract tests
+        env:
+          WORKER_TEST_NATIVE_PARITY: '1'
         run: node scripts/test-worker.mjs
+
+      - name: Run isolated background and persistence acceptance
+        working-directory: worker
+        run: npm run test:background
 
       - name: Configure optional ADMIN_TOKEN
         working-directory: worker

@@ -19,9 +19,9 @@ if (!existsSync(resolve(assetsDir, 'index.html'))) {
 }
 
 const worker = spawn(
-  'npx',
+  process.execPath,
   [
-    'wrangler',
+    resolve(workerDir, 'node_modules/wrangler/bin/wrangler.js'),
     'dev',
     '--local',
     '--port',
@@ -34,6 +34,7 @@ const worker = spawn(
     cwd: workerDir,
     stdio: 'inherit',
     shell: process.platform === 'win32',
+    detached: process.platform !== 'win32',
     env: { ...process.env }
   }
 );
@@ -45,7 +46,8 @@ function stop(code = 0) {
   finished = true;
 
   try {
-    worker.kill('SIGTERM');
+    if (process.platform === 'win32') worker.kill('SIGTERM');
+    else process.kill(-worker.pid, 'SIGTERM');
   } catch {
     // Process may already have exited.
   }
@@ -92,7 +94,7 @@ try {
   console.log('Worker contract tests passed.');
   stop(0);
 } catch (error) {
-  console.error('Worker contract tests failed.');
+  console.error('Worker contract tests failed.', error);
   stop(1);
   throw error;
 }

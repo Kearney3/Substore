@@ -2,10 +2,12 @@ node_modules/
 frontend/
 frontend-dist/
 worker/node_modules/
-worker/.wrangler/
+.wrangler/
 .DS_Store
 .env
 .dev.vars
 *.log
 coverage/
 .upstream-backend/
+.upstream-frontend/
+worker/worker-configuration.d.ts

@@ -2,6 +2,8 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, rmSync, cpSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const checkout = resolve(root, 'frontend');
@@ -20,6 +22,16 @@ console.log('🧹 Cleaning up previous builds...');
 rmSync(checkout, { recursive: true, force: true });
 rmSync(output, { recursive: true, force: true });
 
+const source = process.env.FRONTEND_SOURCE;
+if (source) {
+  const manifest = JSON.parse(readFileSync(resolve(source, '.source-lock.json'), 'utf8'));
+  if (manifest.ref !== ref) throw new Error('Frontend source revision mismatch');
+  for (const [path, expected] of Object.entries(manifest.files)) {
+    const bytes = readFileSync(resolve(source, path));
+    if (createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex') !== expected) throw new Error(`Frontend checksum mismatch: ${path}`);
+  }
+  cpSync(resolve(source), checkout, { recursive: true });
+} else {
 console.log(`📥 Cloning frontend repository: ${repo} ${ref ? `(branch: ${ref})` : ''}`);
 const cloneArgs = ['clone', '--depth', '1'];
 if (ref && !/^[a-f0-9]{40}$/.test(ref)) cloneArgs.push('--branch', ref);
@@ -28,6 +40,7 @@ run('git', cloneArgs);
 if (/^[a-f0-9]{40}$/.test(ref)) {
   run('git', ['fetch', '--depth', '1', 'origin', ref], checkout);
   run('git', ['checkout', '--detach', 'FETCH_HEAD'], checkout);
+}
 }
 run('node', [resolve(root, 'scripts/patch-workers-frontend.mjs'), checkout]);
 
@@ -57,9 +70,9 @@ console.log('📂 Copying build artifacts...');
 mkdirSync(output, { recursive: true });
 cpSync(dist, output, { recursive: true });
 
-let sha = '';
+let sha = source ? ref : '';
 try { 
-  sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: checkout, encoding: 'utf8' }).trim(); 
+  if (!source) sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: checkout, encoding: 'utf8' }).trim();
 } catch {}
 
 writeFileSync(resolve(output, '.upstream-frontend-sha'), `${sha}\n`);
