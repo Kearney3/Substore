@@ -34,12 +34,14 @@ Preview URLs are disabled because historical Worker versions predate the native 
 
 ## Deploy through Actions
 
-Push `main` or dispatch `Deploy Sub-Store to Cloudflare`.
+Push `main` or dispatch `Deploy Sub-Store to Cloudflare`. The workflow first runs the reusable `Tests` workflow (CI) and deploys only if it passes; a failed CI run never reaches Cloudflare.
 
-1. Build the pinned official frontend with `VITE_API_URL=/` and the Workers capability/source patches.
-2. Install locked Worker dependencies, generate runtime types and typecheck.
-3. Run official API integration tests, including CRUD, preview, six exporters, collections, files, backups, concurrent writes and remote HTTP.
-4. Apply the required backend path secret, then deploy the Worker, SQLite Durable Object class and frontend assets together.
+1. CI: build the pinned official frontend with `VITE_API_URL=/` and the Workers capability/source patches.
+2. CI: reproduce the pinned backend, install locked Worker dependencies, generate runtime types and typecheck.
+3. CI: run official API integration tests (CRUD, preview, six exporters, collections, files, scripts and overrides, backups, concurrent writes, remote HTTP) and the background acceptance tests.
+4. Deploy: validate the backend path secret, apply it, then deploy the Worker, SQLite Durable Object class and the CI-tested frontend assets together.
+
+Pull requests run the same `Tests` workflow without deploying.
 
 The `official-v3` Durable Object starts with empty official Sub-Store data. No previous D1 data is imported. Its SQLite data persists across deploys, restarts and eviction; use the frontend backup export before major changes. Existing old Cloudflare resources are not used by this implementation.
 

@@ -31,7 +31,7 @@ Configure this value as a GitHub Actions repository secret. Both `sub` and `/sub
 
 ## Deploy
 
-See [DEPLOY.md](DEPLOY.md). Pushes to `main` build the pinned official frontend, check the Worker, run integration tests, and deploy the Worker and static assets together.
+See [DEPLOY.md](DEPLOY.md). Pushes to `main` run CI (pinned frontend build, Worker checks, integration tests) and deploy the Worker and the tested static assets only after CI passes.
 
 There are no account-specific database or KV IDs in the configuration. SQLite Durable Objects are provisioned through Wrangler migrations. The `official-v3` object is a new installation and keeps its data across subsequent deployments.
 
