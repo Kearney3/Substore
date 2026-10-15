@@ -98,6 +98,16 @@ try {
   assert.equal(publicFile.status, 200);
   assert.equal(await publicFile.text(), 'test-file');
   assert.equal((await publicRequest(`/share/file/${file}?token=${fileToken}&sourceName=${name}`)).status, 400);
+  // The frontend (axios) encodes spaces in query params as '+', e.g. after renaming a file to contain one.
+  const spacedFile = `${file} renamed`;
+  await api(`/api/file/${file}`, 'PATCH', { name: spacedFile });
+  created.splice(created.indexOf(`/api/file/${file}`), 1, `/api/file/${encodeURIComponent(spacedFile)}`);
+  const spacedToken = (await api('/api/token', 'POST', { payload: { type: 'file', name: spacedFile } })).token;
+  const spacedQuery = new URLSearchParams({ type: 'file', name: spacedFile }).toString();
+  assert.ok(spacedQuery.includes('+'));
+  assert.ok((await api(`/api/tokens?${spacedQuery}`)).some(item => item.token === spacedToken));
+  await api(`/api/token/${encodeURIComponent(spacedToken)}?${spacedQuery}`, 'DELETE');
+  assert.ok(!(await api('/api/tokens')).some(item => item.token === spacedToken), 'Share for a name with spaces must be deletable');
   const backup = await (await raw('/api/storage')).json();
   assert.ok(backup.subs.some(item => item.name === name));
   const scripted = await raw('/api/preview/sub', 'POST', { ...sub, process: [{ type: 'Script Operator', args: { mode: 'script', content: 'function operator(proxies) { return proxies; }' } }] });

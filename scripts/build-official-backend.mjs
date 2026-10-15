@@ -96,7 +96,12 @@ const result = await build({
         // pattern match`)
         .replace('const req = {', 'const req = { subStoreShareToken: shareToken,');
       if (guarded === source || !guarded.includes('subStoreShareToken: shareToken')) throw new Error('Review official share router changes');
-      return { contents: guarded.replace("if (/json/i.test(headers['content-type']))", "if (body && /json/i.test(headers['content-type']))").replace('status: isQX ? STATUS_CODE_MAP[statusCode] : statusCode,', 'status: statusCode,'), loader: 'js' };
+      // Parse query strings like Node's Express: the frontend (axios) sends spaces as '+', so names such as
+      // "Dukou sub" arrived as "Dukou+sub" and share deletion/listing could not find the token.
+      const queryParse = "const hash = hashes[i].split('=');\n            query[hash[0]] = decodeURIComponent(hash[1]);";
+      if (guarded.split(queryParse).length !== 2) throw new Error('Review official query string parsing');
+      const parsed = guarded.replace(queryParse, "const [key, ...value] = hashes[i].split('=').map(part => part.replace(/\\+/g, ' '));\n            query[decodeURIComponent(key)] = decodeURIComponent(value.join('='));");
+      return { contents: parsed.replace("if (/json/i.test(headers['content-type']))", "if (body && /json/i.test(headers['content-type']))").replace('status: isQX ? STATUS_CODE_MAP[statusCode] : statusCode,', 'status: statusCode,'), loader: 'js' };
     });
     build.onLoad({ filter: /restful\/token\.js$/ }, ({ path }) => {
       const source = readFileSync(path, 'utf8');
