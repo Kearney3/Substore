@@ -1,7 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { runOfficial } from './official/runtime.js';
 import { executeScript } from './scripts';
-import { nextCron, redact } from './schedule';
+import { backendPathSecret, nextCron, redact } from './schedule';
 declare global { namespace Cloudflare { interface Env { ADMIN_TOKEN?: string; SUB_STORE_FRONTEND_BACKEND_PATH?: string; SUB_STORE_PUSH_SERVICE?: string; SUB_STORE_CRON_TIMEZONE?: string; } } }
 
 const MAX_BYTES = 1024 * 1024;
@@ -104,7 +104,7 @@ export class SubscriptionStore extends DurableObject<Cloudflare.Env> {
       if (!response.ok) {
         const result = await response.json().catch(() => null) as { error?: { message?: string; details?: string } } | null;
         const settings = JSON.parse(this.readValues().get('sub-store') || '{}').settings || {};
-        error = redact(`${result?.error?.message || 'Artifact sync failed'} ${result?.error?.details || ''}`, [settings.gistToken || '', this.env.SUB_STORE_FRONTEND_BACKEND_PATH || '']);
+        error = redact(`${result?.error?.message || 'Artifact sync failed'} ${result?.error?.details || ''}`, [settings.gistToken || '', backendPathSecret(this.env.SUB_STORE_FRONTEND_BACKEND_PATH)]);
       }
       const retry = !response.ok && task.attempts < 2;
       const next = retry ? Date.now() + 60000 * (task.attempts + 1) : nextCron(task.cron, Date.now(), this.env.SUB_STORE_CRON_TIMEZONE || 'UTC');
@@ -156,7 +156,7 @@ export class SubscriptionStore extends DurableObject<Cloudflare.Env> {
       let scriptCalls = 0, scriptDepth = 0;
       const fetches = new Set<Promise<any>>();
       const settings = JSON.parse(values.get('sub-store') || '{}').settings || {};
-      const safeLog = (message: string) => redact(message, [this.env.SUB_STORE_FRONTEND_BACKEND_PATH || '', this.env.ADMIN_TOKEN || '', this.env.SUB_STORE_PUSH_SERVICE || '', settings.gistToken || '', settings['age-secret-key'] || '']);
+      const safeLog = (message: string) => redact(message, [backendPathSecret(this.env.SUB_STORE_FRONTEND_BACKEND_PATH), this.env.ADMIN_TOKEN || '', this.env.SUB_STORE_PUSH_SERVICE || '', settings.gistToken || '', settings['age-secret-key'] || '']);
       const response = await new Promise<Response>((resolve, reject) => {
         const timer = setTimeout(() => { controller.abort(); active = false; reject(new Error('Sub-Store request exceeded 25 seconds')); }, 25000);
         const finish = (response: Response) => { clearTimeout(timer); resolve(response); };
@@ -188,7 +188,9 @@ export class SubscriptionStore extends DurableObject<Cloudflare.Env> {
               const work = (async () => {
               const url = new URL(options.url);
               if (!['https:', 'http:'].includes(url.protocol)) throw new Error('Only HTTP(S) subscription URLs are supported');
-              if (options.opts?.policy && options.opts.policy !== 'DIRECT') throw new Error('Proxy/policy routing is unavailable on Cloudflare Workers');
+              for (const route of [options.opts?.policy, options.routing]) {
+                if (route && route !== 'DIRECT') throw new Error('Proxy/policy routing is unavailable on Cloudflare Workers; requests can only be sent directly');
+              }
               const response = await fetch(url, {
                 method: options.method || 'GET', headers: options.headers,
                 body: ['GET', 'HEAD'].includes(options.method || 'GET') ? undefined : options.body,
@@ -256,6 +258,8 @@ export class SubscriptionStore extends DurableObject<Cloudflare.Env> {
 interface TaskOptions {
   url: string; method?: string; headers?: Record<string, string>; body?: string;
   opts?: { policy?: string };
+  // Surge/Loon node or policy-descriptor, or a Node proxy URL, forwarded by the patched official HTTP client.
+  routing?: string;
 }
 interface OfficialResponse { status?: number | string; body?: string; headers?: Record<string, string>; }
 

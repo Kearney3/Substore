@@ -18,6 +18,14 @@ export function redact(message: string, secrets: string[] = []): string {
   let result = message
     .replace(/\b(?:https?|ss|ssr|trojan|vmess|vless|hysteria2?|tuic|anytls):\/\/[^\s"'<>]+/gi, '[URL redacted]')
     .replace(/("?(?:password|token|gistToken|secret|authorization|age-secret-key)"?\s*[:=]\s*)(?:"(?:[^"\\]|\\.)*"|'[^']*'|[^\s,}\]]+)/gi, '$1[redacted]');
-  for (const secret of secrets.filter(Boolean)) result = result.split(secret).join('[redacted]');
+  for (const secret of secrets.filter(Boolean)) {
+    // A path secret (e.g. "/sub") may be a common word; redact it only as a whole path segment.
+    if (secret.startsWith('/')) result = result.replace(new RegExp(`${secret.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=[/?#\\s"'<>]|$)`, 'g'), '/[redacted]');
+    else result = result.split(secret).join('[redacted]');
+  }
   return result.slice(0, 2000);
+}
+
+export function backendPathSecret(path = ''): string {
+  return path ? `/${path.replace(/^\//, '')}` : '';
 }

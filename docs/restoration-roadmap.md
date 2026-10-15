@@ -13,13 +13,37 @@
 
 | 项 | 结果 |
 | --- | --- |
-| 已部署版本（`main` 分支 HEAD） | 所有用户脚本被 `workersUnsupportedScript` 拒绝，覆写不可用。QuickJS 脚本支持只存在于未提交的工作区。 |
-| 工作区 QuickJS 执行器 | 本地、远程链接、订阅/集合来源的 mihomo 配置均可覆写；`/api/file/:name` 下载与预览一致。 |
+| 部署 | `ac7d12f` 及更早版本拒绝所有用户脚本；QuickJS 执行器自 `d317a54` 起已部署。 |
+| QuickJS 执行器 | 本地、远程链接、订阅/集合来源的 mihomo 配置均可覆写；`/api/file/:name` 下载与预览一致。 |
 | 修复：脚本大小 | 官方快捷/覆写包装会把用户脚本内联两次，原 128 KiB 上限实际只允许约 64 KiB 脚本，76 KiB 的覆写即失败。改为求值源码 512 KiB（用户脚本 256 KiB）；实测 980 KiB 包装源码编译仅占 3.3 MiB guest 内存。 |
 | 修复：ProxyUtils 桥接 | 新增 `getFlag`、`removeFlag`、`getISO`、`isIPv4/isIPv6/isIP`、`isValidUUID`、`getRandomPort`、`hex_md5`、`download`、`doh`、`JSON5`。 |
+| 修复：覆写兼容（2026-10-15） | ① 单行 JS（如 `function main(c) { c.tun = { enable: true }; return c }`）同时是合法 YAML 映射，官方 YAML 分支会合并垃圾键并静默跳过脚本——定义 `main()` 的脚本现在直接走 JS 覆写；② 编辑器示例使用的 `ProxyUtils.yaml.load/dump/parse/stringify` 补齐（此前连同 `produceArtifact` 示例一起报 `not a function`）；③ 补充 Node 下可用的 `structuredClone`、`atob/btoa`、`URL/URLSearchParams`、`TextEncoder/TextDecoder`、`setTimeout/clearTimeout`。与官方一致的行为保留：预览中没有 `$options`；`main` 不返回值会报错。 |
 | 验证 | 合同测试新增 YAML 覆写、async `main` + `$arguments` + 订阅来源 + 文件下载、150 KiB 覆写、ProxyUtils 辅助函数。真实公开覆写脚本（26 KiB，2,000 节点）本地约 0.4 s。 |
 
-上线步骤：提交工作区 → 推送 `main` 触发部署工作流 → 在线上文件页创建“mihomo 配置”并添加脚本操作验证。线上 CPU/冷启动未验证。
+线上验证：在文件页创建“mihomo 配置”并添加脚本操作。线上 CPU/冷启动未验证。
+
+## 自定义脚本与代理策略实测（2026-10-15）
+
+本地 workerd 与锁定官方后端（Node，离线）用相同请求对比。社区脚本取自公开仓库当日版本，仅用于测试，不随本仓库分发。
+
+| 脚本 / 场景 | Workers | 官方 Node | 结论 |
+| --- | --- | --- | --- |
+| Keywos `rename.js`（默认、`out=en&flag&nm`） | 成功 | 成功 | 输出一致 |
+| xream `chinese-conv.js`（88 KB 简繁转换） | 成功 | 成功 | 输出一致 |
+| xream `sing-box/template.js`（文件脚本 + `produceArtifact` + JSON5） | 修复前失败，修复后成功 | 成功 | 输出一致 |
+| xream `check/entrance.js`（经 ip-api 查询入口信息） | 成功，按 IP 改名 | 未对比（需联网） | 可用；域名服务器按脚本设计跳过 |
+| xream `availability.js` / `geo.js`（要求 Surge/Loon/Egern） | 明确报错 | 官方回退为无操作，静默不生效 | 有意差异：不吞错误 |
+| xream `http_meta_*.js`（需 http_meta 内核） | 明确报错 | 同样需要 http_meta | 免费 Workers 不可行 |
+| xream `clash-mi-encrypt.js`（`require('crypto')`） | 明确报错 | 此适配下同样失败 | 无 `require` |
+
+本轮修复：
+
+1. **文件脚本回退**：顶层文件脚本先以函数形式执行，看不到 `$content`；若脚本自行捕获该错误并抛出自己的消息，原适配不再回退到快捷形式（sing-box 模板脚本因此报“配置文件不是合法的 JSON5 格式”）。现在与官方一致：文件输入总是回退到快捷形式，真实错误仍会在快捷形式中抛出。
+2. **代理策略不再静默直连**：官方 QX 风格 HTTP 分支只转发 `opts.policy`，脚本传入的 Surge/Loon `node`、`policy-descriptor` 或 Node `proxy` 会被丢弃并直连——测落地/测活结果会是 Worker 出口而非节点。现在全部转发并明确拒绝（`DIRECT` 除外）。
+3. **脚本可见错误原因**：host 异步失败此前只显示 “Script HTTP or async host operation failed”，现在附带原因（截断 300 字符）。
+4. **日志脱敏**：后端路径按整段路径（`/sub`）脱敏，而不是任意子串；此前路径为 `sub` 时日志中所有 “sub” 都被替换。
+
+代理策略实测：订阅 `proxy=策略名`、设置 `defaultProxy=策略名`、脚本 `$substore.http` 的 `opts.policy` / `node` / `policy-descriptor` / `proxy` 均明确失败；`proxy=DIRECT` 与不设置时正常。注意：从 Node 版恢复的备份若设置了 `defaultProxy`，所有远程订阅都会失败，需在设置中清空。订阅下载失败的提示沿用官方“请查看日志”，原因需开启日志（`logsMaxCount`）查看。
 
 ## 剩余差距（按优先级）
 

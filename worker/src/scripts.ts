@@ -41,8 +41,9 @@ export async function executeScript(call: ScriptCall, requestSignal: AbortSignal
     deferreds.add(deferred);
     const task: Promise<void> = Promise.resolve(result).then(value => {
       if (vm.alive && !signal.aborted) { const h = json(value); deferred.resolve(h); h.dispose(); }
-    }, () => {
-      if (vm.alive && !signal.aborted) { const h = vm.newError('Script HTTP or async host operation failed'); deferred.reject(h); h.dispose(); }
+    }, (error) => {
+      const reason = String(error?.message ?? error ?? '').slice(0, 300);
+      if (vm.alive && !signal.aborted) { const h = vm.newError(`Script HTTP or async host operation failed${reason ? `: ${reason}` : ''}`); deferred.reject(h); h.dispose(); }
     }).catch(() => {
       if (vm.alive && !signal.aborted) { const h = vm.newError('Invalid host result'); deferred.reject(h); h.dispose(); }
     }).finally(() => { if (deferred.alive) deferred.dispose(); deferreds.delete(deferred); pending.delete(task); });
@@ -76,7 +77,7 @@ export async function executeScript(call: ScriptCall, requestSignal: AbortSignal
     const proxyUtils = object(call.globals.ProxyUtils, ['parse', 'produce', 'getFlag', 'removeFlag', 'getISO', 'isIPv4', 'isIPv6', 'isIP', 'isValidUUID', 'getRandomPort', 'hex_md5', 'download', 'doh']);
     const json5 = object(call.globals.ProxyUtils.JSON5, ['parse', 'stringify']);
     vm.setProp(proxyUtils, 'JSON5', json5); json5.dispose();
-    const yaml = object(call.globals.yaml, ['safeLoad', 'safeDump']);
+    const yaml = object(call.globals.yaml, ['safeLoad', 'load', 'safeDump', 'dump', 'parse', 'stringify']);
     vm.setProp(proxyUtils, 'yaml', yaml); vm.setProp(vm.global, 'yaml', yaml); yaml.dispose();
     const base64 = object(call.globals.ProxyUtils.Base64, ['encode', 'decode']);
     vm.setProp(proxyUtils, 'Base64', base64); base64.dispose(); put('ProxyUtils', proxyUtils);
@@ -85,6 +86,14 @@ export async function executeScript(call: ScriptCall, requestSignal: AbortSignal
     put('scriptResourceCache', object(call.globals.scriptResourceCache, ['get', 'set', 'remove']));
     put('__bufferFrom', hostFunction('bufferFrom', (value, encoding) => Array.from(Buffer.from(value, encoding))));
     put('__bufferString', hostFunction('bufferString', (value, encoding) => Buffer.from(value).toString(encoding)));
+    put('__urlParse', hostFunction('urlParse', (input, base) => {
+      let url: URL;
+      try { url = new URL(String(input), base === undefined ? undefined : String(base)); } catch { throw new TypeError(`Invalid URL: ${input}`); }
+      const { protocol, username, password, hostname, port, pathname, search, hash } = url;
+      return { protocol, username, password, hostname, port, pathname, search, hash };
+    }));
+    put('__sleep', hostFunction('sleep', (ms) => new Promise<void>(resolve => setTimeout(resolve, Math.max(0, Math.min(Number(ms) || 0, 3000))))));
+    // Node-like globals that official scripts (run with new Function on Node) can rely on.
     vm.unwrapResult(vm.evalCode(`
       class Buffer extends Uint8Array {
         static from(value, encoding) { return new Buffer(__bufferFrom(value, encoding)); }
@@ -93,6 +102,53 @@ export async function executeScript(call: ScriptCall, requestSignal: AbortSignal
       }
       globalThis.Buffer = Buffer;
       ProxyUtils.Buffer = Buffer;
+      globalThis.atob = (s) => __bufferString(__bufferFrom(String(s), 'base64'), 'latin1');
+      globalThis.btoa = (s) => __bufferString(__bufferFrom(String(s), 'latin1'), 'base64');
+      globalThis.structuredClone = (value) => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+      globalThis.TextEncoder = class TextEncoder { get encoding() { return 'utf-8'; } encode(s = '') { return new Uint8Array(__bufferFrom(String(s), 'utf8')); } };
+      globalThis.TextDecoder = class TextDecoder { get encoding() { return 'utf-8'; } decode(bytes) { return bytes ? __bufferString(Array.from(bytes instanceof ArrayBuffer ? new Uint8Array(bytes) : bytes), 'utf8') : ''; } };
+      class URLSearchParams {
+        #list = [];
+        constructor(init = '') {
+          if (typeof init === 'string') {
+            for (const part of init.replace(/^\\?/, '').split('&')) {
+              if (!part) continue;
+              const i = part.indexOf('=');
+              const decode = (s) => decodeURIComponent(s.replace(/\\+/g, ' '));
+              this.#list.push(i < 0 ? [decode(part), ''] : [decode(part.slice(0, i)), decode(part.slice(i + 1))]);
+            }
+          } else if (init) for (const [k, v] of (Symbol.iterator in Object(init) ? init : Object.entries(init))) this.#list.push([String(k), String(v)]);
+        }
+        get size() { return this.#list.length; }
+        append(k, v) { this.#list.push([String(k), String(v)]); }
+        delete(k) { this.#list = this.#list.filter(([key]) => key !== String(k)); }
+        get(k) { const e = this.#list.find(([key]) => key === String(k)); return e ? e[1] : null; }
+        getAll(k) { return this.#list.filter(([key]) => key === String(k)).map(([, v]) => v); }
+        has(k) { return this.#list.some(([key]) => key === String(k)); }
+        set(k, v) { const i = this.#list.findIndex(([key]) => key === String(k)); this.delete(k); this.#list.splice(i < 0 ? this.#list.length : i, 0, [String(k), String(v)]); }
+        sort() { this.#list.sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0); }
+        forEach(fn, self) { for (const [k, v] of this.#list) fn.call(self, v, k, this); }
+        keys() { return this.#list.map(([k]) => k)[Symbol.iterator](); }
+        values() { return this.#list.map(([, v]) => v)[Symbol.iterator](); }
+        entries() { return this.#list.map(e => [...e])[Symbol.iterator](); }
+        [Symbol.iterator]() { return this.entries(); }
+        toString() { const encode = (s) => encodeURIComponent(s).replace(/%20/g, '+'); return this.#list.map(([k, v]) => encode(k) + '=' + encode(v)).join('&'); }
+      }
+      globalThis.URLSearchParams = URLSearchParams;
+      globalThis.URL = class URL {
+        constructor(input, base) { Object.assign(this, __urlParse(input, base)); }
+        get host() { return this.hostname + (this.port ? ':' + this.port : ''); }
+        get origin() { return this.protocol + '//' + this.host; }
+        get search() { const s = this.searchParams.toString(); return s ? '?' + s : ''; }
+        set search(v) { this.searchParams = new URLSearchParams(String(v)); }
+        get href() { const auth = this.username ? this.username + (this.password ? ':' + this.password : '') + '@' : ''; return this.protocol + '//' + auth + this.host + this.pathname + this.search + this.hash; }
+        toString() { return this.href; }
+        toJSON() { return this.href; }
+      };
+      const timers = new Set();
+      let timerId = 0;
+      globalThis.setTimeout = (fn, ms, ...args) => { const id = ++timerId; timers.add(id); __sleep(ms).then(() => { if (timers.delete(id)) fn(...args); }); return id; };
+      globalThis.clearTimeout = (id) => { timers.delete(id); };
       ${lodashSource}
       globalThis.lodash = globalThis._;
     `)).dispose();

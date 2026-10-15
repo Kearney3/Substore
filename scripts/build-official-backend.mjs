@@ -41,9 +41,22 @@ const result = await build({
       if (start < 0 || !source.slice(start).includes('new Function(')) throw new Error('Review official script execution entrypoint');
       // The upstream shortcut fallback can turn a failed full-function script into a no-op.
       // Retry only missing shortcut variables/entrypoints; never swallow an execution limit or user exception.
-      const prefix = source.slice(0, start).replace(/((?:const|let) funcErrMsg = `\$\{err.message \?\? err\}`;)/g, '$1\n        if (!/(?:operator|filter|transformFunction|\\$server|\\$content|\\$files|\\$res) is not defined/.test(funcErrMsg)) throw err;');
+      const retryCheck = '\n        if (!/(?:operator|filter|transformFunction|\\$server|\\$content|\\$files|\\$res) is not defined/.test(funcErrMsg)) throw err;';
+      let prefix = source.slice(0, start).replace(/((?:const|let) funcErrMsg = `\$\{err.message \?\? err\}`;)/g, `$1${retryCheck}`);
       if ((prefix.match(/throw err;/g) || []).length !== 3) throw new Error('Review official script fallback paths');
-      return { contents: prefix + `function createDynamicFunction(name, script, $arguments, $options) {
+      // File scripts are usually top-level code that reads $content, which the function form cannot see; scripts
+      // that catch that ReferenceError rethrow their own message. Upstream always retries file input as a shortcut
+      // script, which still surfaces real errors, so keep that for file input.
+      const operatorStart = prefix.indexOf('async function ApplyOperator(');
+      const operatorCheck = prefix.indexOf(retryCheck, operatorStart);
+      if (operatorStart < 0 || operatorCheck < 0) throw new Error('Review official operator fallback path');
+      prefix = prefix.slice(0, operatorCheck) + retryCheck.replace(') throw err;', ' && !output?.$files && !output?.$content) throw err;') + prefix.slice(operatorCheck + retryCheck.length);
+      // One-line JavaScript such as `function main(c) { c.tun = { enable: true }; return c }` is valid YAML
+      // (a mapping), so the official YAML branch merges garbage and silently skips the script. A YAML
+      // override never defines main(), so send those scripts straight to the JavaScript override path.
+      const yamlPatch = 'let patch = YAML.safeLoad(script);';
+      if (prefix.split(yamlPatch).length !== 2) throw new Error('Review official mihomo YAML override');      const routed = prefix.replace(yamlPatch, "if (/(?:^|[\\s;}])(?:async\\s+)?function\\s+main\\s*\\(|(?:^|[\\s;}])(?:const|let|var)\\s+main\\s*=/.test(script)) throw new Error('JavaScript override');\n                    " + yamlPatch);
+      return { contents: routed + `function createDynamicFunction(name, script, $arguments, $options) {
         return (...input) => runtime.executeScript({ name, script, input, globals: {
           $arguments, $options, $substore: $, lodash,
           ProxyUtils, yaml: ProxyUtils.yaml, b64d: ProxyUtils.Base64.decode, b64e: ProxyUtils.Base64.encode,
@@ -102,7 +115,12 @@ const result = await build({
       if (source === original) throw new Error('Official runtime detection changed; review the Workers adapter');
       const notificationEntry = "notify(title, subtitle = '', content = '', options = {}) {";
       if (!source.includes(notificationEntry)) throw new Error('Review official notification entrypoint');
-      return { contents: source.replace(notificationEntry, notificationEntry + '\n        $notify(title, subtitle, content, options); return;'), loader: 'js' };
+      // The QX-style branch only forwards opts.policy; Surge/Loon node, policy-descriptor and Node proxy options
+      // would be dropped and the request sent direct. Forward them so the adapter can reject routing explicitly.
+      const taskOptions = 'body: options.body,\n                opts: options.opts,\n            });';
+      if (source.split(taskOptions).length !== 2) throw new Error('Review official HTTP routing options');
+      return { contents: source.replace(notificationEntry, notificationEntry + '\n        $notify(title, subtitle, content, options); return;')
+        .replace(taskOptions, "body: options.body,\n                opts: options.opts,\n                routing: options.node ?? options['policy-descriptor'] ?? options.proxy,\n            });"), loader: 'js' };
     });
     build.onLoad({ filter: /utils\/env\.js$/ }, ({ path }) => ({
       contents: readFileSync(path, 'utf8').replace("backend = 'QX'", "backend = 'CloudflareWorkers'"), loader: 'js',

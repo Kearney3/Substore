@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 
 const base = process.env.WORKER_TEST_URL || 'http://127.0.0.1:8787';
+const backendHint = new URL(base).pathname.replace(/\/$/, '');
 const suffix = crypto.randomUUID().slice(0, 8);
 const name = `cf-contract-${suffix}`;
 const collection = `${name}-collection`;
@@ -138,6 +139,23 @@ try {
     // Official wrappers inline the script twice; a 150 KiB override must still run.
     const largeOverride = await api('/api/preview/file', 'POST', mihomo([script('Script Operator', `function main(config) { config.large = true; return config; }\n//${'x'.repeat(150 * 1024)}`)]));
     assert.match(largeOverride.processed, /large: true/);
+    // One-line JavaScript containing ": " is also valid YAML; it must still run as a JavaScript override.
+    const oneLine = await api('/api/preview/file', 'POST', mihomo([script('Script Operator', 'function main(config) { config.tun = { enable: true }; return config }')]));
+    assert.match(oneLine.processed, /tun:\n  enable: true/);
+    assert.doesNotMatch(oneLine.processed, /function main/);
+    // The editor's own examples: ProxyUtils.yaml.load/dump with produceArtifact, plus Node-like globals.
+    const editorExample = await api('/api/preview/file', 'POST', mihomo([script('Script Operator', `const y = ProxyUtils.yaml.load($content); y.proxies.unshift(...await produceArtifact({ type: 'subscription', name: '${name}', platform: 'ClashMeta', produceType: 'internal' })); $content = ProxyUtils.yaml.dump(y)`)]));
+    assert.match(editorExample.processed, /name: Renamed/);
+    // Top-level file scripts that catch the function-form ReferenceError still fall back to the shortcut form, as upstream.
+    const caught = await api('/api/preview/file', 'POST', { name: file, source: 'local', content: '{"a":1}', process: [script('Script Operator', 'let parsed; try { parsed = ProxyUtils.JSON5.parse($content ?? $files[0]); } catch (e) { throw new Error("not JSON5"); } parsed.b = 2; $content = JSON.stringify(parsed);')] });
+    assert.equal(caught.processed, '{"a":1,"b":2}');
+    const globals = await api('/api/preview/file', 'POST', mihomo([script('Script Operator', 'async function main(c) { await new Promise(r => setTimeout(r, 1)); const u = new URL("https://a.com/p?q=1"); u.searchParams.set("q", "2"); c.g = [structuredClone({ a: atob(btoa("ok")) }).a, u.href, new TextDecoder().decode(new TextEncoder().encode("你好"))].join(" "); return c }')]));
+    assert.match(globals.processed, /g: ok https:\/\/a\.com\/p\?q=2 你好/);
+    // $options exists on download (not preview), as upstream; response headers set by the override reach the client.
+    const headerFile = mihomo([script('Script Operator', 'function main(config) {\n  if ($options) $options._res = { headers: { "profile-update-interval": 24 } }\n  return config\n}')], { name: `${file}-mihomo-headers` });
+    await api('/api/files', 'POST', headerFile, 201);
+    created.push(`/api/file/${headerFile.name}`);
+    assert.equal((await raw(`/api/file/${headerFile.name}`)).headers.get('profile-update-interval'), '24');
     await api(`/api/sub/${name}`, 'PATCH', { process: [script('Response Transformer', '$res.body += "\\n# transformed"; $res.headers["x-script"] = "yes";')] });
     const transformed = await raw(`/download/${name}?target=ClashMeta`);
     assert.equal(transformed.headers.get('x-script'), 'yes');
@@ -150,6 +168,10 @@ try {
     assert.ok(logs.logs.length > 0);
     assert.ok(!JSON.stringify(logs).includes('private-value'));
     assert.ok(!JSON.stringify(logs).includes('private-token'));
+    // The backend path is redacted as a path segment only, so short paths such as "sub" keep logs readable.
+    await scriptedPreview([script('Script Operator', `function operator(nodes) { $substore.info("subscription marker ${backendHint}/api"); return nodes; }`)]);
+    const pathLog = (await api('/api/logs')).logs.map(entry => entry.message).find(message => message.includes('subscription marker'));
+    assert.match(pathLog, /subscription marker \/\[redacted\]\/api/);
     await api('/api/settings', 'PATCH', { logsMaxCount: settings.logsMaxCount ?? 0 });
     const artifact = `${name}-artifact`;
     await api('/api/artifacts', 'POST', { name: artifact, type: 'subscription', source: name, platform: 'ClashMeta', sync: true, upload: false, cron: '*/5 * * * *' }, 201);
@@ -193,6 +215,15 @@ try {
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
     const remote = await api('/api/preview/sub', 'POST', { name, source: 'remote', url: `http://127.0.0.1:${server.address().port}/subscription`, process: [] });
     assert.equal(remote.processed.length, 2, 'Remote HTTP subscription must use the Workers fetch adapter');
+    // Proxy/policy routing is unavailable on Workers and must fail explicitly instead of silently going direct.
+    const remoteUrl = `http://127.0.0.1:${server.address().port}/subscription#noCache`;
+    assert.equal((await raw('/api/preview/sub', 'POST', { name, source: 'remote', url: remoteUrl, proxy: 'MyPolicy', process: [] })).status, 500);
+    assert.equal((await api('/api/preview/sub', 'POST', { name, source: 'remote', url: remoteUrl, proxy: 'DIRECT', process: [] })).processed.length, 2);
+    for (const routing of ["opts: { policy: 'MyPolicy' }", "node: 'MyPolicy'", "'policy-descriptor': 'MyPolicy'", "proxy: 'http://127.0.0.1:7890'"]) {
+      const routed = await raw('/api/preview/sub', 'POST', { ...sub, process: [{ type: 'Script Operator', args: { mode: 'script', content: `async function operator(nodes) { await $substore.http.get({ url: '${remoteUrl}', ${routing} }); return nodes; }` } }] });
+      assert.equal(routed.status, 500, routing);
+      assert.match(await routed.text(), /routing is unavailable on Cloudflare Workers/, routing);
+    }
   }
   console.log(`Official Sub-Store contracts passed: access and shares, CRUD, exporters, script sandbox and limits, files, logs, schedules, large Unicode persistence, backup and concurrent writes${server ? ', remote HTTP' : ''}.`);
 } finally {
