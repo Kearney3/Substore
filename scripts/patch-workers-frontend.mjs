@@ -11,6 +11,20 @@ function patch(path, replacements) {
   }
   writeFileSync(file, text);
 }
+// The official PWA uses registerType "prompt", but no update prompt is wired up, so a new service worker
+// waits behind any open tab or installed app and the precache keeps serving the previous deploy's UI.
+// Activate new deploys immediately and reload once when the new worker takes control.
+patch('vite.config.ts', [['registerType: "prompt",', 'registerType: "autoUpdate",']]);
+patch('src/main.ts', [["import App from './App.vue';", `import App from './App.vue';
+
+if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+  let reloadedForUpdate = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (reloadedForUpdate) return;
+    reloadedForUpdate = true;
+    window.location.reload();
+  });
+}`]]);
 patch('src/views/editor/ActionBlock.vue', [
   ["import i18nFile from '@/locales/zh';", "import i18nFile from '@/locales/zh';\nimport { useGlobalStore } from '@/store/global';"],
   ["Object.keys(i18nFile.editorPage.subConfig.nodeActions).map(type =>", "Object.keys(i18nFile.editorPage.subConfig.nodeActions).filter(type => { const feature = useGlobalStore().env.feature; if (!feature?.workers) return true; if (type === 'Response Transformer') return feature.responseScripts === true; if (type.includes('Script')) return (sourceType === 'file' ? feature.fileScripts : feature.nodeScripts) === true; return true; }).map(type =>"],
