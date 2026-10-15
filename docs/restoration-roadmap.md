@@ -34,6 +34,7 @@
 | xream `check/entrance.js`（经 ip-api 查询入口信息） | 成功，按 IP 改名 | 未对比（需联网） | 可用；域名服务器按脚本设计跳过 |
 | xream `availability.js` / `geo.js`（要求 Surge/Loon/Egern） | 明确报错 | 官方回退为无操作，静默不生效 | 有意差异：不吞错误 |
 | xream `http_meta_*.js`（需 http_meta 内核） | 明确报错 | 同样需要 http_meta | 免费 Workers 不可行 |
+| powerfullz `override-rules/convert.min.js`（mihomo 覆写，23 KB；jsDelivr 链接 / 内联，`#full&tun&grouptype&regex&threshold…`；40 与 500 节点） | 成功，50–170 ms；保存后下载、公开分享均正常 | 成功 | 三组参数输出逐字节一致 |
 | xream `clash-mi-encrypt.js`（`require('crypto')`） | 明确报错 | 此适配下同样失败 | 无 `require` |
 
 本轮修复：
@@ -42,6 +43,8 @@
 2. **代理策略不再静默直连**：官方 QX 风格 HTTP 分支只转发 `opts.policy`，脚本传入的 Surge/Loon `node`、`policy-descriptor` 或 Node `proxy` 会被丢弃并直连——测落地/测活结果会是 Worker 出口而非节点。现在全部转发并明确拒绝（`DIRECT` 除外）。
 3. **脚本可见错误原因**：host 异步失败此前只显示 “Script HTTP or async host operation failed”，现在附带原因（截断 300 字符）。
 4. **日志脱敏**：后端路径按整段路径（`/sub`）脱敏，而不是任意子串；此前路径为 `sub` 时日志中所有 “sub” 都被替换。
+
+5. **按时长过期的分享**：分享编辑器默认的“时长”过期发送 `expiresIn`（如 `30d`），官方用 `eval(require("ms"))` 解析，在 Workers 上报 `TOKEN_SIGN_FAILED`；现在打包 `ms`，合同测试覆盖。
 
 代理策略实测：订阅 `proxy=策略名`、设置 `defaultProxy=策略名`、脚本 `$substore.http` 的 `opts.policy` / `node` / `policy-descriptor` / `proxy` 均明确失败；`proxy=DIRECT` 与不设置时正常。注意：从 Node 版恢复的备份若设置了 `defaultProxy`，所有远程订阅都会失败，需在设置中清空。订阅下载失败的提示沿用官方“请查看日志”，原因需开启日志（`logsMaxCount`）查看。
 

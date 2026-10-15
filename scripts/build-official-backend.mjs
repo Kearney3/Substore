@@ -102,9 +102,11 @@ const result = await build({
       const source = readFileSync(path, 'utf8');
       const start = source.indexOf('    if (!ENV().isNode) {', source.indexOf('async function signToken'));
       const end = source.indexOf('    try {', start);
-      if (start < 0 || end < 0 || !source.includes('const nanoid = eval(`require("nanoid")`);')) throw new Error('Review official token creation changes');
+      const msRequire = 'const ms = eval(`require("ms")`);';
+      if (start < 0 || end < 0 || !source.includes('const nanoid = eval(`require("nanoid")`);') || !source.includes(msRequire)) throw new Error('Review official token creation changes');
       // Reuse official validation, expiration and count rules with Web Crypto token generation.
-      return { contents: "import { customAlphabet, urlAlphabet } from 'nanoid';\n" + (source.slice(0, start) + source.slice(end)).replace('const nanoid = eval(`require("nanoid")`);', 'const nanoid = { customAlphabet, urlAlphabet };'), loader: 'js' };
+      // Bundle ms so duration expiry (the frontend's "30d"-style shares) works without Node require.
+      return { contents: "import { customAlphabet, urlAlphabet } from 'nanoid';\nimport parseDuration from 'ms';\n" + (source.slice(0, start) + source.slice(end)).replace('const nanoid = eval(`require("nanoid")`);', 'const nanoid = { customAlphabet, urlAlphabet };').replace(msRequire, 'const ms = parseDuration;'), loader: 'js' };
     });
     build.onLoad({ filter: /runtime\/(fs|path|net|tls|dgram|worker-threads|stream-promises|child-process)\.js$/ }, () => ({
       contents: 'export default function unavailableNodeBuiltin() { return undefined; }', loader: 'js',

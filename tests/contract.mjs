@@ -55,6 +55,9 @@ try {
   const shared = await publicRequest(share);
   assert.equal(shared.status, 200, 'Share must work without cookies, admin path or login');
   assert.match(await shared.text(), /example.com/);
+  // The share editor's default duration expiry sends expiresIn such as "30d".
+  const durationToken = (await api('/api/token', 'POST', { payload: { type: 'sub', name }, options: { expiresIn: '30d' } })).token;
+  assert.equal((await publicRequest(`/share/sub/${name}?token=${encodeURIComponent(durationToken)}`)).status, 200);
   assert.equal((await publicRequest(`/share/sub/${name}`)).status, 404);
   assert.equal((await publicRequest(`/share/sub/${name}?token=invalid`)).status, 404);
   assert.equal((await publicRequest(`/share/sub/${name}-other?token=${token}`)).status, 404);
